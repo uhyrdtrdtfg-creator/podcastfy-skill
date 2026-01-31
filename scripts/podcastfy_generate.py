@@ -3,7 +3,7 @@
 
 Goals (Clawdbot skill wrapper):
 - Provide a single command that takes URLs and outputs an MP3 path.
-- Use Gemini for transcript generation via GEMINI_API_KEY.
+- Use LLM (Gemini/Claude/OpenAI) for transcript generation.
 - Use Edge TTS (podcastfy's built-in edge support) for audio.
 
 This script:
@@ -19,8 +19,16 @@ Usage:
   ./podcastfy_generate.py --url https://a --url https://b --longform
 
 Env:
-  GEMINI_API_KEY (required)
+  # LLM Provider (choose one):
+  GEMINI_API_KEY          - For Gemini
+  ANTHROPIC_API_KEY       - For Claude (or custom name via PODCASTFY_API_KEY_LABEL)
+  ANTHROPIC_BASE_URL      - Custom API base URL (optional, for proxies)
+  ANTHROPIC_AUTH_TOKEN    - Alternative API key env var name
+
+  PODCASTFY_API_KEY_LABEL (optional; default: GEMINI_API_KEY)
+    - Set to the env var name containing your API key, e.g. ANTHROPIC_AUTH_TOKEN
   PODCASTFY_LLM_MODEL (optional; default: gemini-1.5-flash)
+    - For Claude: claude-sonnet-4-20250514, claude-opus-4-20250514, etc.
   PODCASTFY_EDGE_VOICE_Q (optional; default: en-US-JennyNeural)
   PODCASTFY_EDGE_VOICE_A (optional; default: en-US-EricNeural)
 
@@ -78,10 +86,66 @@ def write_conversation_config(out_dir: Path) -> Path:
     (out_dir / "audio").mkdir(parents=True, exist_ok=True)
     (out_dir / "transcripts").mkdir(parents=True, exist_ok=True)
 
-    voice_q = os.getenv("PODCASTFY_EDGE_VOICE_Q", "en-US-JennyNeural")
-    voice_a = os.getenv("PODCASTFY_EDGE_VOICE_A", "en-US-EricNeural")
+    # Language settings
+    language = os.getenv("PODCASTFY_LANGUAGE", "English")
+    is_chinese = language.lower() in ("chinese", "zh", "中文")
+    is_bilingual = language.lower() in ("bilingual", "en-zh", "双语")
 
-    cfg = f"""conversation_style:\n  - engaging\n  - fast-paced\n  - enthusiastic\nroles_person1: main summarizer\nroles_person2: questioner/clarifier\ndialogue_structure:\n  - Introduction\n  - Main Content Summary\n  - Conclusion\npodcast_name: Podcastfy\npodcast_tagline: Your Personal Generative AI Podcast\noutput_language: English\ncreativity: 1\nuser_instructions: ""\n\ntext_to_speech:\n  default_tts_model: edge\n  output_directories:\n    transcripts: \"{(out_dir / 'transcripts').as_posix()}\"\n    audio: \"{(out_dir / 'audio').as_posix()}\"\n  edge:\n    default_voices:\n      question: \"{voice_q}\"\n      answer: \"{voice_a}\"\n  audio_format: mp3\n  temp_audio_dir: \"{(out_dir / 'tmp').as_posix()}/\"\n  ending_message: See You Next Time!\n"""
+    # Default voices and settings based on language
+    if is_bilingual:
+        # Bilingual mode: Person1 speaks English, Person2 speaks Chinese translation
+        default_voice_q = "en-US-JennyNeural"  # English voice
+        default_voice_a = "zh-CN-YunxiNeural"  # Chinese voice
+        ending_message = "See you next time! 下次再见！"
+        output_language = "English"  # Base language for LLM
+        user_instructions = (
+            "YOU MUST FOLLOW THESE RULES EXACTLY - NO EXCEPTIONS: "
+            "1. Person1 says EXACTLY ONE short sentence in English (10 words MAX). "
+            "2. Person2 translates ONLY that one sentence to Chinese. "
+            "3. Then Person1 says the NEXT single sentence. "
+            "4. Then Person2 translates it. "
+            "5. REPEAT this pattern throughout the ENTIRE podcast. "
+            "FORBIDDEN: Long paragraphs, multiple sentences at once, combining ideas. "
+            "CORRECT FORMAT: "
+            "<Person1>Podcasts are digital audio shows.</Person1>"
+            "<Person2>播客是数字音频节目。</Person2>"
+            "<Person1>They started in 2004.</Person1>"
+            "<Person2>它们始于2004年。</Person2>"
+            "<Person1>Anyone can create one.</Person1>"
+            "<Person2>任何人都可以创建。</Person2>"
+            "Each Person1 line must be under 10 words. This is MANDATORY."
+        )
+        roles_person1 = "English speaker"
+        roles_person2 = "Chinese translator"
+    elif is_chinese:
+        default_voice_q = "zh-CN-XiaoxiaoNeural"
+        default_voice_a = "zh-CN-YunxiNeural"
+        ending_message = "下次再见！"
+        output_language = "Chinese"
+        user_instructions = ""
+        roles_person1 = "main summarizer"
+        roles_person2 = "questioner/clarifier"
+    else:
+        default_voice_q = "en-US-JennyNeural"
+        default_voice_a = "en-US-EricNeural"
+        ending_message = "See You Next Time!"
+        output_language = "English"
+        user_instructions = ""
+        roles_person1 = "main summarizer"
+        roles_person2 = "questioner/clarifier"
+
+    voice_q = os.getenv("PODCASTFY_EDGE_VOICE_Q", default_voice_q)
+    voice_a = os.getenv("PODCASTFY_EDGE_VOICE_A", default_voice_a)
+
+    # For bilingual mode, use more concise style
+    if is_bilingual:
+        style = "concise\\n  - short sentences\\n  - simple words"
+        word_count = 50  # Very short exchanges
+    else:
+        style = "engaging\\n  - fast-paced\\n  - enthusiastic"
+        word_count = 200
+
+    cfg = f"""conversation_style:\n  - {style}\nroles_person1: {roles_person1}\nroles_person2: {roles_person2}\ndialogue_structure:\n  - Introduction\n  - Main Content Summary\n  - Conclusion\npodcast_name: Podcastfy\npodcast_tagline: Your Personal Generative AI Podcast\noutput_language: {output_language}\ncreativity: 0\nword_count: {word_count}\nuser_instructions: "{user_instructions}"\n\ntext_to_speech:\n  default_tts_model: edge\n  output_directories:\n    transcripts: \"{(out_dir / 'transcripts').as_posix()}\"\n    audio: \"{(out_dir / 'audio').as_posix()}\"\n  edge:\n    default_voices:\n      question: \"{voice_q}\"\n      answer: \"{voice_a}\"\n  audio_format: mp3\n  temp_audio_dir: \"{(out_dir / 'tmp').as_posix()}/\"\n  ending_message: {ending_message}\n"""
 
     path = out_dir / "conversation_config.yaml"
     path.write_text(cfg, encoding="utf-8")
@@ -165,8 +229,9 @@ def main(argv: list[str]) -> int:
     if not args.urls:
         raise SystemExit("Provide at least one --url")
 
-    if not os.getenv("GEMINI_API_KEY"):
-        raise SystemExit("Missing GEMINI_API_KEY environment variable")
+    api_key_label = os.getenv("PODCASTFY_API_KEY_LABEL", "GEMINI_API_KEY")
+    if not os.getenv(api_key_label):
+        raise SystemExit(f"Missing {api_key_label} environment variable")
 
     ensure_ffmpeg()
     ensure_venv()
@@ -185,6 +250,7 @@ from podcastfy.client import generate_podcast
 urls = os.environ["_PODCASTFY_URLS"].split("\n")
 longform = os.environ.get("_PODCASTFY_LONGFORM","0") == "1"
 llm_model = os.environ.get("PODCASTFY_LLM_MODEL", "gemini-1.5-flash")
+api_key_label = os.environ.get("PODCASTFY_API_KEY_LABEL", "GEMINI_API_KEY")
 
 with open(os.environ["_PODCASTFY_CONV_CFG"], "r", encoding="utf-8") as f:
     conv = yaml.safe_load(f)
@@ -199,7 +265,7 @@ out = generate_podcast(
     urls=urls,
     tts_model="edge",
     llm_model_name=llm_model,
-    api_key_label="GEMINI_API_KEY",
+    api_key_label=api_key_label,
     config=cfg,
     conversation_config=conv,
     longform=longform,
