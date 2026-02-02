@@ -48,7 +48,13 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 SKILL_DIR = BASE_DIR.parent
-VENV_DIR = SKILL_DIR / ".venv"
+
+# Virtual environment location:
+# Default: ~/venvs/podcastfy-clawdbot/
+# Override via PODCASTFY_VENV_DIR env var
+_default_venv = Path.home() / "venvs" / "podcastfy-clawdbot"
+VENV_DIR = Path(os.getenv("PODCASTFY_VENV_DIR", str(_default_venv)))
+
 PY = VENV_DIR / "bin" / "python"
 PIP = VENV_DIR / "bin" / "pip"
 EDGE_TTS = VENV_DIR / "bin" / "edge-tts"

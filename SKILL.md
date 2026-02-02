@@ -8,7 +8,7 @@ description: Generate an AI podcast (MP3) from one or more URLs using the open-s
 Generate a podcast-style audio conversation (MP3) from a URL (or multiple URLs) using `podcastfy`.
 
 This skill provides a wrapper script that:
-- creates/uses a local venv (`{baseDir}/.venv`)
+- creates/uses a venv at `~/venvs/podcastfy-clawdbot/` (keeps project dir clean)
 - installs/updates `podcastfy`
 - runs Podcastfy with **Gemini** for transcript generation and **Edge** for TTS
 
@@ -58,6 +58,7 @@ Podcastfy prints the final MP3 path on success.
 
 ## Optional tuning
 
+- `PODCASTFY_VENV_DIR` - Custom venv location (default: `~/venvs/podcastfy-clawdbot/`)
 - `PODCASTFY_LLM_MODEL` (default: `gemini-1.5-flash`)
 - `PODCASTFY_EDGE_VOICE_Q` (default: `en-US-JennyNeural`)
 - `PODCASTFY_EDGE_VOICE_A` (default: `en-US-EricNeural`)
